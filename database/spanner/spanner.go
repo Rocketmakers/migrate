@@ -18,10 +18,17 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database"
 
+	guuid "github.com/google/uuid"
+
 	"github.com/hashicorp/go-multierror"
 	"google.golang.org/api/iterator"
 	adminpb "google.golang.org/genproto/googleapis/spanner/admin/database/v1"
 )
+
+func genUUID() string {
+	id := guuid.New()
+	return id.String()
+}
 
 func init() {
 	db := Spanner{}
@@ -168,11 +175,13 @@ func (s *Spanner) SetVersion(version int, dirty bool) error {
 
 	_, err := s.db.data.ReadWriteTransaction(ctx,
 		func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+
+			id := genUUID()
+
 			m := []*spanner.Mutation{
-				spanner.Delete(s.config.MigrationsTable, spanner.AllKeys()),
 				spanner.Insert(s.config.MigrationsTable,
-					[]string{"Version", "Dirty"},
-					[]interface{}{version, dirty},
+					[]string{"MigrationId", "Version", "Dirty", "AppliedAt"},
+					[]interface{}{id, version, dirty, "spanner.commit_timestamp()"},
 				)}
 			return txn.BufferWrite(m)
 		})
@@ -188,7 +197,7 @@ func (s *Spanner) Version() (version int, dirty bool, err error) {
 	ctx := context.Background()
 
 	stmt := spanner.Statement{
-		SQL: `SELECT Version, Dirty FROM ` + s.config.MigrationsTable + ` LIMIT 1`,
+		SQL: `SELECT Version, Dirty FROM ` + s.config.MigrationsTable + ` ORDER BY AppliedAt DESC LIMIT 1`,
 	}
 	iter := s.db.data.Single().Query(ctx, stmt)
 	defer iter.Stop()
@@ -293,9 +302,11 @@ func (s *Spanner) ensureVersionTable() (err error) {
 	}
 
 	stmt := fmt.Sprintf(`CREATE TABLE %s (
-    Version INT64 NOT NULL,
-    Dirty    BOOL NOT NULL
-	) PRIMARY KEY(Version)`, tbl)
+		MigrationId STRING(36),
+		Version INT64 NOT NULL,
+		Dirty    BOOL NOT NULL,
+		AppliedAt TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true)
+	) PRIMARY KEY(MigrationId)`, tbl)
 
 	op, err := s.db.admin.UpdateDatabaseDdl(ctx, &adminpb.UpdateDatabaseDdlRequest{
 		Database:   s.config.DatabaseName,

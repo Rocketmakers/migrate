@@ -59,11 +59,13 @@ type Spanner struct {
 	config *Config
 }
 
+// DB has handles to the spanner admin and data clients
 type DB struct {
 	admin *sdb.DatabaseAdminClient
 	data  *spanner.Client
 }
 
+// NewDB creates a new DB referencing the spanner admin and data clients
 func NewDB(admin sdb.DatabaseAdminClient, data spanner.Client) *DB {
 	return &DB{
 		admin: &admin,

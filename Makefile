@@ -93,6 +93,13 @@ release:
 	git tag v$(V)
 	@read -p "Press enter to confirm and push to origin ..." && git push origin v$(V)
 
+rm-release:
+	docker build -t migrate .
+	docker tag migrate rocketmakers/migrate
+	docker tag migrate rocketmakers/migrate:$(V)
+	docker push rocketmakers/migrate:latest
+	docker push rocketmakers/migrate:$(V)
+	git tag $(V)
 
 define external_deps
 	@echo '-- $(1)';  go list -f '{{join .Deps "\n"}}' $(1) | grep -v github.com/$(REPO_OWNER)/migrate | xargs go list -f '{{if not .Standard}}{{.ImportPath}}{{end}}'
